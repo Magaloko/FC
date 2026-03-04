@@ -86,11 +86,14 @@ create type public.announcement_type as enum (
 
 
 -- ============================================================================
--- 3. HELPER FUNCTIONS
+-- 3. TRIGGER FUNCTION: handle_updated_at
+-- ============================================================================
+-- This function has no table dependency (only references new.updated_at),
+-- so it can safely be created before any tables.
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
--- 3a. Trigger function: automatically set updated_at to now() on row update
+-- Trigger function: automatically set updated_at to now() on row update
 -- ----------------------------------------------------------------------------
 create or replace function public.handle_updated_at()
 returns trigger
@@ -101,97 +104,6 @@ begin
   new.updated_at = now();
   return new;
 end;
-$$;
-
--- ----------------------------------------------------------------------------
--- 3b. Trigger function: create a profile row when a new user signs up
--- ----------------------------------------------------------------------------
--- When a user is inserted into auth.users (via Supabase Auth), this trigger
--- automatically creates a corresponding row in public.profiles so that the
--- application always has a profile to reference.
--- ----------------------------------------------------------------------------
-create or replace function public.handle_new_user()
-returns trigger
-language plpgsql
-security definer
-set search_path = ''
-as $$
-begin
-  insert into public.profiles (id, full_name, email, avatar_url)
-  values (
-    new.id,
-    coalesce(new.raw_user_meta_data ->> 'full_name', ''),
-    coalesce(new.email, ''),
-    coalesce(new.raw_user_meta_data ->> 'avatar_url', '')
-  );
-  return new;
-end;
-$$;
-
--- ----------------------------------------------------------------------------
--- 3c. Helper: get the club_id for the currently authenticated user
--- ----------------------------------------------------------------------------
-create or replace function public.get_my_club_id()
-returns uuid
-language sql
-stable
-security definer
-set search_path = ''
-as $$
-  select club_id
-  from public.profiles
-  where id = auth.uid();
-$$;
-
--- ----------------------------------------------------------------------------
--- 3d. Helper: get the role for the currently authenticated user
--- ----------------------------------------------------------------------------
-create or replace function public.get_my_role()
-returns public.user_role
-language sql
-stable
-security definer
-set search_path = ''
-as $$
-  select role
-  from public.profiles
-  where id = auth.uid();
-$$;
-
--- ----------------------------------------------------------------------------
--- 3e. Helper: check if current user has a staff-level role (coach or above)
--- ----------------------------------------------------------------------------
-create or replace function public.is_staff()
-returns boolean
-language sql
-stable
-security definer
-set search_path = ''
-as $$
-  select exists (
-    select 1
-    from public.profiles
-    where id = auth.uid()
-      and role in ('admin', 'club_manager', 'coach', 'assistant_coach')
-  );
-$$;
-
--- ----------------------------------------------------------------------------
--- 3f. Helper: check if current user is admin or club_manager
--- ----------------------------------------------------------------------------
-create or replace function public.is_club_admin()
-returns boolean
-language sql
-stable
-security definer
-set search_path = ''
-as $$
-  select exists (
-    select 1
-    from public.profiles
-    where id = auth.uid()
-      and role in ('admin', 'club_manager')
-  );
 $$;
 
 
@@ -481,7 +393,142 @@ comment on table public.team_memberships is 'Associates users with teams and the
 
 
 -- ============================================================================
--- 5. INDEXES
+-- 5. FUNCTIONS THAT DEPEND ON TABLES
+-- ============================================================================
+-- These functions reference the profiles table (and others), so they must be
+-- created AFTER all tables exist.
+-- ============================================================================
+
+-- ----------------------------------------------------------------------------
+-- 5a. Trigger function: create a profile row when a new user signs up
+-- ----------------------------------------------------------------------------
+-- When a user is inserted into auth.users (via Supabase Auth), this trigger
+-- automatically creates a corresponding row in public.profiles so that the
+-- application always has a profile to reference.
+-- ----------------------------------------------------------------------------
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  insert into public.profiles (id, full_name, email, avatar_url)
+  values (
+    new.id,
+    coalesce(new.raw_user_meta_data ->> 'full_name', ''),
+    coalesce(new.email, ''),
+    coalesce(new.raw_user_meta_data ->> 'avatar_url', '')
+  );
+  return new;
+end;
+$$;
+
+-- ----------------------------------------------------------------------------
+-- 5b. Helper: get the club_id for the currently authenticated user
+-- ----------------------------------------------------------------------------
+create or replace function public.get_my_club_id()
+returns uuid
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select club_id
+  from public.profiles
+  where id = auth.uid();
+$$;
+
+-- ----------------------------------------------------------------------------
+-- 5c. Helper: get the role for the currently authenticated user
+-- ----------------------------------------------------------------------------
+create or replace function public.get_my_role()
+returns public.user_role
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select role
+  from public.profiles
+  where id = auth.uid();
+$$;
+
+-- ----------------------------------------------------------------------------
+-- 5d. Helper: check if current user has a staff-level role (coach or above)
+-- ----------------------------------------------------------------------------
+create or replace function public.is_staff()
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1
+    from public.profiles
+    where id = auth.uid()
+      and role in ('admin', 'club_manager', 'coach', 'assistant_coach')
+  );
+$$;
+
+-- ----------------------------------------------------------------------------
+-- 5e. Helper: check if current user is admin or club_manager
+-- ----------------------------------------------------------------------------
+create or replace function public.is_club_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1
+    from public.profiles
+    where id = auth.uid()
+      and role in ('admin', 'club_manager')
+  );
+$$;
+
+
+-- ============================================================================
+-- 6. TRIGGERS
+-- ============================================================================
+
+-- Auto-create a profile when a new user signs up via Supabase Auth
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row
+  execute function public.handle_new_user();
+
+-- Auto-update updated_at on every table that has the column
+create trigger set_updated_at before update on public.clubs
+  for each row execute function public.handle_updated_at();
+
+create trigger set_updated_at before update on public.profiles
+  for each row execute function public.handle_updated_at();
+
+create trigger set_updated_at before update on public.teams
+  for each row execute function public.handle_updated_at();
+
+create trigger set_updated_at before update on public.players
+  for each row execute function public.handle_updated_at();
+
+create trigger set_updated_at before update on public.player_stats
+  for each row execute function public.handle_updated_at();
+
+create trigger set_updated_at before update on public.trainings
+  for each row execute function public.handle_updated_at();
+
+create trigger set_updated_at before update on public.matches
+  for each row execute function public.handle_updated_at();
+
+create trigger set_updated_at before update on public.announcements
+  for each row execute function public.handle_updated_at();
+
+
+-- ============================================================================
+-- 7. INDEXES
 -- ============================================================================
 -- Indexes on foreign keys and commonly filtered / sorted columns to improve
 -- query performance.
@@ -540,43 +587,7 @@ create index idx_team_memberships_user_id on public.team_memberships(user_id);
 
 
 -- ============================================================================
--- 6. TRIGGERS
--- ============================================================================
-
--- Auto-update updated_at on every table that has the column
-create trigger set_updated_at before update on public.clubs
-  for each row execute function public.handle_updated_at();
-
-create trigger set_updated_at before update on public.profiles
-  for each row execute function public.handle_updated_at();
-
-create trigger set_updated_at before update on public.teams
-  for each row execute function public.handle_updated_at();
-
-create trigger set_updated_at before update on public.players
-  for each row execute function public.handle_updated_at();
-
-create trigger set_updated_at before update on public.player_stats
-  for each row execute function public.handle_updated_at();
-
-create trigger set_updated_at before update on public.trainings
-  for each row execute function public.handle_updated_at();
-
-create trigger set_updated_at before update on public.matches
-  for each row execute function public.handle_updated_at();
-
-create trigger set_updated_at before update on public.announcements
-  for each row execute function public.handle_updated_at();
-
--- Auto-create a profile when a new user signs up via Supabase Auth
-create trigger on_auth_user_created
-  after insert on auth.users
-  for each row
-  execute function public.handle_new_user();
-
-
--- ============================================================================
--- 7. ROW LEVEL SECURITY (RLS)
+-- 8. ROW LEVEL SECURITY (RLS)
 -- ============================================================================
 -- Enable RLS on every table and define policies. The general strategy:
 --
@@ -592,7 +603,7 @@ create trigger on_auth_user_created
 -- ============================================================================
 
 -- -------------------------------------------------------
--- 7a. clubs
+-- 8a. clubs
 -- -------------------------------------------------------
 alter table public.clubs enable row level security;
 
@@ -616,7 +627,7 @@ create policy "Admins can insert clubs"
   with check (public.get_my_role() = 'admin');
 
 -- -------------------------------------------------------
--- 7b. profiles
+-- 8b. profiles
 -- -------------------------------------------------------
 alter table public.profiles enable row level security;
 
@@ -650,7 +661,7 @@ create policy "Service can insert profiles"
   with check (id = auth.uid());
 
 -- -------------------------------------------------------
--- 7c. teams
+-- 8c. teams
 -- -------------------------------------------------------
 alter table public.teams enable row level security;
 
@@ -680,7 +691,7 @@ create policy "Club admins can delete teams"
   using (club_id = public.get_my_club_id() and public.is_club_admin());
 
 -- -------------------------------------------------------
--- 7d. players
+-- 8d. players
 -- -------------------------------------------------------
 alter table public.players enable row level security;
 
@@ -744,7 +755,7 @@ create policy "Club admins can delete players"
   );
 
 -- -------------------------------------------------------
--- 7e. player_stats
+-- 8e. player_stats
 -- -------------------------------------------------------
 alter table public.player_stats enable row level security;
 
@@ -798,7 +809,7 @@ create policy "Staff can update player stats"
   );
 
 -- -------------------------------------------------------
--- 7f. trainings
+-- 8f. trainings
 -- -------------------------------------------------------
 alter table public.trainings enable row level security;
 
@@ -862,7 +873,7 @@ create policy "Club admins can delete trainings"
   );
 
 -- -------------------------------------------------------
--- 7g. training_attendance
+-- 8g. training_attendance
 -- -------------------------------------------------------
 alter table public.training_attendance enable row level security;
 
@@ -917,7 +928,7 @@ create policy "Staff can update training attendance"
   );
 
 -- -------------------------------------------------------
--- 7h. matches
+-- 8h. matches
 -- -------------------------------------------------------
 alter table public.matches enable row level security;
 
@@ -981,7 +992,7 @@ create policy "Club admins can delete matches"
   );
 
 -- -------------------------------------------------------
--- 7i. match_events
+-- 8i. match_events
 -- -------------------------------------------------------
 alter table public.match_events enable row level security;
 
@@ -1050,7 +1061,7 @@ create policy "Club admins can delete match events"
   );
 
 -- -------------------------------------------------------
--- 7j. player_ratings
+-- 8j. player_ratings
 -- -------------------------------------------------------
 alter table public.player_ratings enable row level security;
 
@@ -1095,7 +1106,7 @@ create policy "Staff can update own player ratings"
   );
 
 -- -------------------------------------------------------
--- 7k. calendar_events
+-- 8k. calendar_events
 -- -------------------------------------------------------
 alter table public.calendar_events enable row level security;
 
@@ -1128,7 +1139,7 @@ create policy "Club admins can delete calendar events"
   using (club_id = public.get_my_club_id() and public.is_club_admin());
 
 -- -------------------------------------------------------
--- 7l. announcements
+-- 8l. announcements
 -- -------------------------------------------------------
 alter table public.announcements enable row level security;
 
@@ -1161,7 +1172,7 @@ create policy "Club admins can delete announcements"
   using (club_id = public.get_my_club_id() and public.is_club_admin());
 
 -- -------------------------------------------------------
--- 7m. team_memberships
+-- 8m. team_memberships
 -- -------------------------------------------------------
 alter table public.team_memberships enable row level security;
 
@@ -1226,7 +1237,7 @@ create policy "Club admins can delete team memberships"
 
 
 -- ============================================================================
--- 8. STORAGE BUCKETS (optional, configure via Supabase dashboard)
+-- 9. STORAGE BUCKETS (optional, configure via Supabase dashboard)
 -- ============================================================================
 -- You may want to create storage buckets for:
 --   - club-logos     : Club logo images
