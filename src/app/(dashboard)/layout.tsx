@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/auth-store';
 import { useClubStore } from '@/stores/club-store';
 import { AppShell } from '@/components/layout/app-shell';
 import { Loader2 } from 'lucide-react';
+import { isDemoMode, DEMO_PROFILE, DEMO_CLUB, DEMO_TEAMS } from '@/lib/demo-data';
 
 function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -16,6 +17,16 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const init = async () => {
+      // --- Demo Mode: skip Supabase, load mock data ---
+      if (isDemoMode()) {
+        setProfile(DEMO_PROFILE);
+        setCurrentClub(DEMO_CLUB);
+        setTeams(DEMO_TEAMS);
+        setAuthLoading(false);
+        setIsReady(true);
+        return;
+      }
+
       const supabase = createClient();
 
       // Check authentication

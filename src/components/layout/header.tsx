@@ -7,6 +7,7 @@ import { Bell, LogOut, Menu, Search } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
+import { isDemoMode, disableDemoMode } from '@/lib/demo-data';
 
 export function Header() {
   const router = useRouter();
@@ -15,8 +16,12 @@ export function Header() {
   const { sidebarOpen } = useUIStore();
 
   const handleLogout = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
+    if (isDemoMode()) {
+      disableDemoMode();
+    } else {
+      const supabase = createClient();
+      await supabase.auth.signOut();
+    }
     router.push('/login');
   };
 

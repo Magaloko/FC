@@ -3,10 +3,11 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Shield } from 'lucide-react';
+import { Shield, Play } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { enableDemoMode } from '@/lib/demo-data';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -38,6 +39,11 @@ export default function LoginPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleDemoLogin() {
+    enableDemoMode();
+    router.push('/dashboard');
   }
 
   return (
@@ -91,6 +97,28 @@ export default function LoginPage() {
             {loading ? 'Signing in...' : 'Sign in'}
           </Button>
         </form>
+
+        {/* Divider */}
+        <div className="my-6 flex items-center gap-3">
+          <div className="h-px flex-1 bg-gray-200" />
+          <span className="text-xs font-medium text-gray-400">OR</span>
+          <div className="h-px flex-1 bg-gray-200" />
+        </div>
+
+        {/* Demo Login */}
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full gap-2"
+          size="lg"
+          onClick={handleDemoLogin}
+        >
+          <Play className="h-4 w-4" />
+          Demo Login
+        </Button>
+        <p className="mt-2 text-center text-xs text-gray-400">
+          Explore the app with sample data — no account needed
+        </p>
 
         <p className="mt-6 text-center text-sm text-gray-500">
           Don&apos;t have an account?{' '}
