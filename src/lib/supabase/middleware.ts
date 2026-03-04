@@ -6,6 +6,12 @@ export async function updateSession(request: NextRequest) {
     request,
   });
 
+  // Demo mode: skip all auth checks, let the client handle it
+  const demoMode = request.cookies.get('fc_demo_mode')?.value === 'true';
+  if (demoMode) {
+    return supabaseResponse;
+  }
+
   // If Supabase env vars are not configured, skip auth and let the app render
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
     return supabaseResponse;

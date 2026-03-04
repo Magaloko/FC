@@ -88,21 +88,26 @@ export const DEMO_TEAMS: Team[] = [
   },
 ];
 
-const DEMO_MODE_KEY = 'fc_manager_demo_mode';
+const DEMO_COOKIE = 'fc_demo_mode';
 
 export function enableDemoMode() {
   if (typeof window !== 'undefined') {
-    sessionStorage.setItem(DEMO_MODE_KEY, 'true');
+    document.cookie = `${DEMO_COOKIE}=true;path=/;max-age=86400;SameSite=Lax`;
   }
 }
 
 export function disableDemoMode() {
   if (typeof window !== 'undefined') {
-    sessionStorage.removeItem(DEMO_MODE_KEY);
+    document.cookie = `${DEMO_COOKIE}=;path=/;max-age=0`;
   }
 }
 
 export function isDemoMode(): boolean {
   if (typeof window === 'undefined') return false;
-  return sessionStorage.getItem(DEMO_MODE_KEY) === 'true';
+  return document.cookie.includes(`${DEMO_COOKIE}=true`);
+}
+
+/** Check demo cookie from a NextRequest (server-side / middleware) */
+export function isDemoModeServer(cookieValue: string | undefined): boolean {
+  return cookieValue === 'true';
 }
